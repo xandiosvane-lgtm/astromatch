@@ -1,0 +1,41 @@
+ASTROMATCH V7 - FIX DEFINITIVO SWISS EPHEMERIS
+
+Il problema precedente era pyswisseph 2.10.3.2: per Python 3.12 non esiste
+la wheel Windows corrispondente, quindi pip tentava di compilare C e chiedeva
+Microsoft Visual C++.
+
+Questa versione usa pysweph 2.10.3.6, una continuazione mantenuta del progetto,
+che fornisce una wheel Windows x86-64 per CPython 3.12. Mantiene lo stesso
+import Python: `import swisseph as swe`.
+
+Il launcher usa Python 3.12, installa solo la wheel binaria e verifica
+esplicitamente `import swisseph` prima di avviare AstroMatch.
+
+1. Chiudi le vecchie finestre di AstroMatch.
+2. Estrai questo ZIP in una NUOVA cartella.
+3. Doppio clic su AVVIA_ASTROMATCH.bat.
+4. Non installare Visual Studio o C++ Build Tools.
+
+
+FIX V9:
+Su Windows Python può non avere il database IANA dei fusi orari.
+Questa versione installa esplicitamente tzdata, quindi Europe/Rome
+funziona anche su Windows.
+
+FIX V10:
+Gestione compatibile delle nuove tuple restituite da pysweph per calc_ut()
+e houses_ex(), inclusi eventuali messaggi di errore.
+
+V11:
+La città di nascita ora ha autocompletamento. Scrivi almeno 2 caratteri,
+seleziona una delle città proposte e AstroMatch compila automaticamente
+latitudine e longitudine. La ricerca usa OpenStreetMap/Nominatim e richiede
+una connessione Internet quando si cerca una città.
+
+V12:
+- Il calcolo astrologico usa Swiss Ephemeris con Moshier (FLG_MOSEPH):
+  non richiede più alcun file .se1 sul PC, quindi l'errore "SwissEph file
+  sep/sepl_18.se1 not found" non può più bloccare il calcolo.
+- La ricerca geografica è mondiale tramite OpenStreetMap/Nominatim:
+  puoi cercare città, comuni, località e Paesi in qualsiasi parte del mondo.
+  Esempio: "Frascati Italia", "Tokyo Giappone", "New York USA".
