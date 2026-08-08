@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AstroMatch</title>
+<style>
+body{font-family:Arial,sans-serif;background:#10101a;color:#eee;margin:0;padding:24px}
+.wrap{max-width:1120px;margin:auto}.card{background:#1b1b29;border:1px solid #34344a;border-radius:14px;padding:18px;margin:14px 0}
+h1{color:#d9a7ff}h2{color:#caa4ff}h3{color:#e6d5ff}
+label{display:block;margin:8px 0 4px;color:#bbb}
+input{width:100%;box-sizing:border-box;background:#11111b;color:#fff;border:1px solid #45455d;border-radius:8px;padding:9px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+button{background:#8b5cf6;color:white;border:0;border-radius:9px;padding:11px 14px;margin:6px 5px 0 0;cursor:pointer}
+button:hover{background:#a67cff}.secondary{background:#45455d}
+.candidate{border-top:1px solid #3a3a50;padding-top:14px;margin-top:14px}
+.score{font-size:24px;color:#7df5bb;font-weight:bold}.pill{display:inline-block;background:#303049;border-radius:20px;padding:5px 9px;margin:3px;font-size:12px}
+.err{color:#ff8d8d}.muted{color:#aaa}.hero{background:linear-gradient(135deg,#22183a,#171726);border:1px solid #60478a}
+table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #333;text-align:left}
+.notice{background:#29243a;border-left:4px solid #a77cff;padding:10px 12px;border-radius:6px}.citywrap{position:relative}.suggestions{position:absolute;z-index:20;left:0;right:0;background:#161622;border:1px solid #4b4266;border-radius:8px;margin-top:4px;overflow:hidden;box-shadow:0 10px 30px #0008}.suggestion{padding:10px 12px;cursor:pointer;border-bottom:1px solid #2e2a3d}.suggestion:last-child{border-bottom:0}.suggestion:hover{background:#29243a}.selected{color:#7df5bb;font-size:12px;margin-top:4px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>🔮 AstroMatch</h1>
+<p>Analisi del tema natale, <b>profilo partner ideale</b> e confronto di candidati. 🌍 Ricerca mondiale di città e Paesi: scrivi il nome e seleziona il risultato.</p>
+
+<div class="card">
+<h2>👤 Persona principale</h2>
+<div class="grid">
+<div><label>Nome</label><input id="a_name" value="Persona A"></div>
+<div><label>Data di nascita</label><input id="a_date" type="date" value="1990-01-01"></div>
+<div><label>Ora di nascita</label><input id="a_time" type="time" value="12:00"></div>
+<div><label>Fuso orario</label><input id="a_tz" value="Europe/Rome"></div>
+<div class="citywrap"><label>Città di nascita</label><input id="a_birth_city" autocomplete="off" placeholder="Scrivi città + Paese (es. Roma Italia, Tokyo Giappone, New York USA...)">><div id="a_suggestions" class="suggestions" style="display:none"></div><div id="a_selected" class="selected"></div></div><div class="muted" style="margin-top:5px">Copertura mondiale tramite ricerca geografica: città, comuni, località e Paesi.</div>
+<div><label>Latitudine (autocompilata)</label><input id="a_lat" type="number" step="0.000001" value="41.902782"></div>
+<div><label>Longitudine (autocompilata)</label><input id="a_lon" type="number" step="0.000001" value="12.496366"></div>
+<div><label>Città domicilio</label><input id="a_city" placeholder="es. Roma"></div>
+<div><label>Lavoro</label><input id="a_work" placeholder="es. barista"></div>
+</div>
+<button onclick="chartA()">🌙 Calcola tema natale</button>
+<button onclick="findIdeal()">🔮 TROVA IL PARTNER IDEALE — senza candidati</button>
+</div>
+
+<div id="out" class="card" style="display:none"></div>
+
+<div class="card">
+<h2>❤️ Confronta persone reali (facoltativo)</h2>
+<div class="notice">Non devi compilare questa sezione per ottenere il profilo ideale. Usala solo quando hai già una o più persone da confrontare.</div>
+<div id="candidates"></div>
+<button onclick="addCandidate()">+ Aggiungi candidato</button>
+<div class="grid">
+<div><label>Lavoro preferito (opzionale)</label><input id="pref_work"></div>
+<div><label>Città preferita (opzionale)</label><input id="pref_city"></div>
+</div>
+<button onclick="runMatch()">🏆 Confronta candidati</button>
+</div>
+</div>
+
+<script>
+
+let cityTimers={};
+async function geocode(q){
+  const r=await fetch("/api/geocode?q="+encodeURIComponent(q));
+  const d=await r.json();
+  if(!r.ok) throw Error(d.detail||"Geocodifica non disponibile");
+  return d.results||[];
+}
+function setupCityAutocomplete(inputId, boxId, selectedId, latId, lonId){
+  const input=document.getElementById(inputId), box=document.getElementById(boxId), selected=document.getElementById(selectedId);
+  if(!input)return;
+  input.addEventListener("input",()=>{
+    clearTimeout(cityTimers[inputId]);
+    const q=input.value.trim();
+    box.style.display="none"; box.innerHTML=""; selected.textContent="";
+    if(q.length<2)return;
+    cityTimers[inputId]=setTimeout(async()=>{
+      try{
+        const results=await geocode(q);
+        if(!results.length){box.innerHTML='<div class="suggestion">Nessuna città trovata</div>';box.style.display="block";return}
+        box.innerHTML=results.map((x,i)=>`<div class="suggestion" data-i="${i}"><b>${escapeHtml(x.city||x.label)}</b><br><span class="muted">${escapeHtml(x.country||"")} · ${x.latitude.toFixed(5)}, ${x.longitude.toFixed(5)}</span></div>`).join("");
+        box.style.display="block";
+        [...box.querySelectorAll(".suggestion")].forEach((el,i)=>{
+          el.onclick=()=>{
+            const x=results[i];
+            input.value=x.city||x.label;
+            document.getElementById(latId).value=x.latitude.toFixed(6);
+            document.getElementById(lonId).value=x.longitude.toFixed(6);
+            selected.textContent="✓ Posizione selezionata: "+(x.label||"");
+            box.style.display="none";
+          };
+        });
+      }catch(e){
+        box.innerHTML='<div class="suggestion err">'+escapeHtml(e.message)+'</div>';box.style.display="block";
+      }
+    },450);
+  });
+  input.addEventListener("keydown",e=>{
+    if(e.key==="Escape")box.style.display="none";
+  });
+}
+
+let n=0;
+function addCandidate(){
+ n++; const id=n; const d=document.createElement("div"); d.className="candidate"; d.id="cand"+id;
+ d.innerHTML=`<h3>Candidato ${id}</h3><div class="grid">
+ <div><label>Nome</label><input id="c${id}_name" value="Candidato ${id}"></div>
+ <div><label>Data di nascita</label><input id="c${id}_date" type="date" value="1990-01-01"></div>
+ <div><label>Ora di nascita</label><input id="c${id}_time" type="time" value="12:00"></div>
+ <div><label>Fuso orario</label><input id="c${id}_tz" value="Europe/Rome"></div>
+ <div class="citywrap"><label>Città di nascita</label><input id="c${id}_birth_city" autocomplete="off" placeholder="Scrivi città + Paese..."><div id="c${id}_suggestions" class="suggestions" style="display:none"></div><div id="c${id}_selected" class="selected"></div></div>
+ <div><label>Latitudine (autocompilata)</label><input id="c${id}_lat" type="number" step="0.000001" value="41.902782"></div>
+ <div><label>Longitudine (autocompilata)</label><input id="c${id}_lon" type="number" step="0.000001" value="12.496366"></div>
+ <div><label>Città domicilio</label><input id="c${id}_city"></div>
+ <div><label>Lavoro</label><input id="c${id}_work"></div>
+ </div><button class="secondary" onclick="document.getElementById('cand${id}').remove()">Rimuovi</button>`;
+ document.getElementById("candidates").appendChild(d);
+ setupCityAutocomplete("c"+id+"_birth_city","c"+id+"_suggestions","c"+id+"_selected","c"+id+"_lat","c"+id+"_lon");
+}
+function val(id){return document.getElementById(id).value}
+function person(p){return {name:val(p+"_name"),date:val(p+"_date"),time:val(p+"_time"),timezone:val(p+"_tz"),latitude:+val(p+"_lat"),longitude:+val(p+"_lon"),birth_city:val(p+"_birth_city"),domicile_city:val(p+"_city"),work:val(p+"_work"),house_system:"P"}}
+function candidates(){return [...document.querySelectorAll(".candidate")].map(el=>{const id=el.id.replace("cand","");return {name:val("c"+id+"_name"),date:val("c"+id+"_date"),time:val("c"+id+"_time"),timezone:val("c"+id+"_tz"),latitude:+val("c"+id+"_lat"),longitude:+val("c"+id+"_lon"),birth_city:val("c"+id+"_birth_city"),domicile_city:val("c"+id+"_city"),work:val("c"+id+"_work"),house_system:"P"}})}
+function show(s){const o=document.getElementById("out");o.style.display="block";o.innerHTML=s;return o}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+
+async function chartA(){
+ const out=show("Calcolo del tema natale...");
+ try{const r=await fetch("/api/chart",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(person("a"))});
+ const d=await r.json();if(!r.ok)throw Error(d.detail||"Errore");
+ let p="<h2>🌙 Tema natale</h2><p><b>Ascendente:</b> "+d.angles.Ascendente.sign.name+" · <b>Medio Cielo:</b> "+d.angles["Medio Cielo"].sign.name+"</p><table><tr><th>Pianeta</th><th>Segno</th><th>Casa</th><th>Retrogrado</th></tr>";
+ for(const [k,v] of Object.entries(d.positions))p+=`<tr><td>${k}</td><td>${v.sign.name} ${v.sign.degree}°</td><td>${v.house}</td><td>${v.retrograde?"Sì":"No"}</td></tr>`;
+ p+="</table>";out.innerHTML=p}catch(e){out.innerHTML='<div class="err">'+escapeHtml(e.message)+"</div>"}
+}
+
+async function findIdeal(){
+ const out=show("🔮 Sto costruendo il profilo astrologico ideale...");
+ try{
+  const r=await fetch("/api/ideal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(person("a"))});
+  const d=await r.json();if(!r.ok)throw Error(d.detail||"Errore");
+  const i=d.ideal, p=i.profile, h=i.ideal_houses;
+  let s=`<div class="hero"><h2>🏆 PROFILO PARTNER IDEALE</h2>
+  <div class="score">${i.model_score}%</div>
+  <p class="muted">Punteggio del modello astrologico interpretativo — non è una probabilità scientifica.</p></div>
+  <div class="card"><h3>🪐 Configurazione da cercare</h3>
+  <table><tr><th>Elemento</th><th>Profilo ideale</th></tr>
+  <tr><td>Sole</td><td><b>${p.Sole}</b></td></tr>
+  <tr><td>Luna</td><td><b>${p.Luna}</b></td></tr>
+  <tr><td>Ascendente</td><td><b>${p.Ascendente}</b></td></tr>
+  <tr><td>Discendente</td><td><b>${i.relationship_axis["Discendente ideale"]}</b></td></tr>
+  <tr><td>Venere</td><td><b>${p.Venere}</b></td></tr>
+  <tr><td>Marte</td><td><b>${p.Marte}</b></td></tr>
+  <tr><td>Mercurio</td><td>${p.Mercurio}</td></tr>
+  <tr><td>Giove</td><td>${p.Giove}</td></tr><tr><td>Saturno</td><td>${p.Saturno}</td></tr>
+  <tr><td>Urano</td><td>${p.Urano}</td></tr><tr><td>Nettuno</td><td>${p.Nettuno}</td></tr><tr><td>Plutone</td><td>${p.Plutone}</td></tr></table></div>
+  <div class="card"><h3>🏠 Case relazionali da osservare</h3>
+  ${Object.entries(h).map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join("")}
+  </div>
+  <div class="card"><h3>❤️ Perché questo profilo</h3><ul>${i.why.map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul>
+  <p><b>Priorità:</b> ${i.search_targets.priorita_alta.join(" · ")}</p>
+  <p><b>Da verificare su una persona reale:</b> ${i.search_targets.da_confrontare.join(" · ")}</p>
+  <div class="notice">${escapeHtml(i.search_targets.nota)}</div></div>`;
+  out.innerHTML=s;
+ }catch(e){out.innerHTML='<div class="err">'+escapeHtml(e.message)+"</div>"}
+}
+
+async function runMatch(){
+ const cs=candidates(); if(!cs.length){findIdeal();return}
+ const out=show("❤️ Analizzo i candidati...");
+ try{
+  const r=await fetch("/api/match",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({person_a:person("a"),candidates:cs,preferred_work:val("pref_work"),preferred_city:val("pref_city")})});
+  const d=await r.json();if(!r.ok)throw Error(d.detail||"Errore");
+  let p="<h2>🏆 Ranking compatibilità</h2>";
+  d.ranking.forEach(x=>{const c=x.match.categories;p+=`<div class="candidate"><h3>#${x.rank} ${escapeHtml(x.candidate.name)} — <span class="score">${x.match.score}%</span></h3>
+  <p>❤️ ${c.emotional}% · 🔥 ${c.attraction}% · 💍 ${c.partnership}% · 🧠 ${c.communication}% · 🪐 ${c.stability}% · 🌀 ${c.intimacy}%</p>
+  <p><b>Chimica:</b> ${x.match.chemistry}% · <b>Lungo termine:</b> ${x.match.long_term}% · <b>Partner ideale:</b> ${x.match.ideal}%</p>
+  <p>${x.why.map(z=>`<span class="pill">${z[0]} ${z[1]}%</span>`).join("")}</p>${x.why_winner?`<p><b>Perché #1:</b> ${escapeHtml(x.why_winner)}</p>`:""}</div>`});
+  out.innerHTML=p;
+ }catch(e){out.innerHTML='<div class="err">'+escapeHtml(e.message)+"</div>"}
+}
+</script>
+</body></html>
